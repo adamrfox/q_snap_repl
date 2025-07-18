@@ -7,9 +7,13 @@ import json
 import time
 import os
 import keyring
+import keyring.backend
+from keyrings.alt.file import PlaintextKeyring
+keyring.set_keyring(PlaintextKeyring())
 import subprocess
 from datetime import datetime, timezone
 from dateutil import tz
+import urllib
 import urllib3
 urllib3.disable_warnings()
 import pprint
@@ -92,6 +96,23 @@ def qumulo_get(addr, api, auth):
         sys.stderr.write(str(res.content) + "\n")
         exit(3)
 
+def qumulo_post(addr, api, body, auth):
+    dprint("API_POST: " + api + " : " + str(body))
+    good = False
+    while not good:
+        good = True
+        try:
+            res = requests.post('https://' + addr + '/api' + api, headers=auth, data=body, verify=False, timeout=timeout)
+        except requests.exceptions.ConnectionError:
+            print("Connection Error: Retrying....")
+            time.sleep(5)
+            good = False
+    results = json.loads(res.content.decode('utf-8'))
+    if res.status_code == 200:
+        return (results)
+    else:
+        sys.stderr.write("API ERROR: " + str(res.status_code) + '\n')
+        exit(3)
 def get_token_from_file(file):
     with open(file, 'r') as fp:
         tf = fp.read().strip()
@@ -121,10 +142,11 @@ if __name__ == "__main__":
     ofp = ""
     lf = []
     snaps = []
+    repl_cmd = 'rsync -av'
 
 
-    optlist, args = getopt.getopt(sys.argv[1:],'hDc:f:s:d', ['--help', '--DEBUG', '--creds=', '--token=', '--token-file=',
-                                                               '--src-creds', '--dest-creds'])
+    optlist, args = getopt.getopt(sys.argv[1:],'hDc:f:s:d:r:', ['--help', '--DEBUG', '--creds=', '--token=', '--token-file=',
+                                                               '--src-creds=', '--dest-creds=', '--repl_cmd='])
     for opt, a in optlist:
         if opt in ['-h,', '--help']:
             usage()
@@ -143,6 +165,8 @@ if __name__ == "__main__":
             (src_user, src_password) = a.split(':')
         if opt in ('-d', '--dest-creds'):
             (dest_user, dest_password) = a.split(':')
+        if opt in ('-r', '--repl_cmd'):
+            repl_cmd = a
 
     try:
         (src, dest) = args
@@ -155,6 +179,13 @@ if __name__ == "__main__":
     dprint(str(src_auth))
     dest_auth = api_login(dest_qumulo, dest_user, dest_password, DEST_RING_SYSTEM)
     dprint(str(dest_auth))
+    get_dest_path = qumulo_get(dest_qumulo, '/v1/files/' + urllib.parse.quote(dest_path, safe='') + '/info/attributes',
+                               dest_auth)
+    if get_dest_path == 404:
+        print('GOT 404 in dir_info')
+        exit(2)
+    dprint(str(get_dest_path))
+    dest_id = get_dest_path['id']
 # Get local paths on client
     res = subprocess.run('df', stdout=subprocess.PIPE, text=True)
     found = False
@@ -188,6 +219,20 @@ if __name__ == "__main__":
     src_ss = qumulo_get(src_qumulo, '/v4/snapshots/status/', src_auth)
     for se in src_ss['entries']:
         if se['source_file_path'] == src_path:
-            print('MATCH')
+            if '_replication_' in se['name'] and se['expiration'] == '':
+                continue
             snaps.append({'id': se['id'], 'name': se['name'], 'timestamp': se['timestamp'], 'expiration': se['expiration']})
-    pp.pprint(snaps)
+#    pp.pprint(snaps)
+# Loop on snapshots
+    repl_cmd_l = repl_cmd.split()
+    repl_cmd_l.append('.')
+    repl_cmd_l.append(local_dest_path)
+    dprint("REPL_CMD: " + str(repl_cmd_l))
+    for snap in snaps:
+        print("Replicating " + snap['name'])
+        subprocess.run(repl_cmd_l, cwd=local_src_path + '/.snapshot/' + snap['name'], capture_output=True)
+        snap_f = snap['name'].split('_')
+        snap_f.pop(0)
+        snap_strip = '_'.join(snap_f)
+        body = json.dumps({'name_suffix': snap_strip, 'expiration': snap['expiration'], 'source_file_id': dest_id})
+        qumulo_post(dest_qumulo, '/v3/snapshots/', body, dest_auth)
