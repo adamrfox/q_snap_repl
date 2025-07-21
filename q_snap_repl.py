@@ -143,10 +143,12 @@ if __name__ == "__main__":
     lf = []
     snaps = []
     repl_cmd = 'rsync -av'
+    SNAP_LIST = False
+    snap_id_list = []
 
 
-    optlist, args = getopt.getopt(sys.argv[1:],'hDc:f:s:d:r:', ['--help', '--DEBUG', '--creds=', '--token=', '--token-file=',
-                                                               '--src-creds=', '--dest-creds=', '--repl_cmd='])
+    optlist, args = getopt.getopt(sys.argv[1:],'hDc:f:s:d:r:i:', ['--help', '--DEBUG', '--creds=', '--token=', '--token-file=',
+                                                               '--src-creds=', '--dest-creds=', '--repl_cmd=', '--ids='])
     for opt, a in optlist:
         if opt in ['-h,', '--help']:
             usage()
@@ -167,10 +169,15 @@ if __name__ == "__main__":
             (dest_user, dest_password) = a.split(':')
         if opt in ('-r', '--repl_cmd'):
             repl_cmd = a
+        if opt in ('-i', '--id-list'):
+            SNAP_LIST = True
+            snap_id_list = a.split(',')
+            print(snap_id_list)
 
     try:
         (src, dest) = args
     except:
+        print(args)
         usage()
 # Validate logins on clusters
     (src_qumulo, src_path) = src.split(':')
@@ -218,11 +225,17 @@ if __name__ == "__main__":
 # Get snapshots for source path
     src_ss = qumulo_get(src_qumulo, '/v4/snapshots/status/', src_auth)
     for se in src_ss['entries']:
-        if se['source_file_path'] == src_path:
-            if '_replication_' in se['name'] and se['expiration'] == '':
-                continue
-            snaps.append({'id': se['id'], 'name': se['name'], 'timestamp': se['timestamp'], 'expiration': se['expiration']})
-#    pp.pprint(snaps)
+        print(se['id'])
+        if not SNAP_LIST:
+            if se['source_file_path'] == src_path:
+                if '_replication_' in se['name'] and se['expiration'] == '':
+                    continue
+                snaps.append({'id': se['id'], 'name': se['name'], 'timestamp': se['timestamp'], 'expiration': se['expiration']})
+        elif str(se['id']) in snap_id_list:
+            snaps.append(
+                    {'id': se['id'], 'name': se['name'], 'timestamp': se['timestamp'], 'expiration': se['expiration']})
+
+    dprint("SNAP_LIST: "+ str(snaps))
 # Loop on snapshots
     repl_cmd_l = repl_cmd.split()
     repl_cmd_l.append('.')
@@ -235,4 +248,5 @@ if __name__ == "__main__":
         snap_f.pop(0)
         snap_strip = '_'.join(snap_f)
         body = json.dumps({'name_suffix': snap_strip, 'expiration': snap['expiration'], 'source_file_id': dest_id})
+        print("Creating snapshot on target")
         qumulo_post(dest_qumulo, '/v3/snapshots/', body, dest_auth)
