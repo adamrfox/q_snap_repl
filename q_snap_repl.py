@@ -172,16 +172,22 @@ if __name__ == "__main__":
         if opt in ('-i', '--id-list'):
             SNAP_LIST = True
             snap_id_list = a.split(',')
-            print(snap_id_list)
 
     try:
         (src, dest) = args
     except:
-        print(args)
         usage()
 # Validate logins on clusters
-    (src_qumulo, src_path) = src.split(':')
-    (dest_qumulo, dest_path) = dest.split(':')
+    if src.startswith('\\'):
+        sf = src.split('\\')
+        print(sf)
+        src_qumulo = sf[2]
+        src_path = sf[3]
+        print(src_qumulo + " : " + src_path)
+        exit(1)
+    else:
+        (src_qumulo, src_path) = src.split(':')
+        (dest_qumulo, dest_path) = dest.split(':')
     src_auth = api_login(src_qumulo, src_user, src_password, SRC_RING_SYSTEM)
     dprint(str(src_auth))
     dest_auth = api_login(dest_qumulo, dest_user, dest_password, DEST_RING_SYSTEM)
@@ -225,7 +231,6 @@ if __name__ == "__main__":
 # Get snapshots for source path
     src_ss = qumulo_get(src_qumulo, '/v4/snapshots/status/', src_auth)
     for se in src_ss['entries']:
-        print(se['id'])
         if not SNAP_LIST:
             if se['source_file_path'] == src_path:
                 if '_replication_' in se['name'] and se['expiration'] == '':
