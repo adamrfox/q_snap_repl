@@ -8,8 +8,8 @@ import time
 import os
 import keyring
 import keyring.backend
-from keyrings.alt.file import PlaintextKeyring
-keyring.set_keyring(PlaintextKeyring())
+# from keyrings.alt.file import PlaintextKeyring
+# keyring.set_keyring(PlaintextKeyring())
 import subprocess
 from datetime import datetime, timezone
 from dateutil import tz
@@ -179,11 +179,15 @@ if __name__ == "__main__":
         usage()
 # Validate logins on clusters
     if src.startswith('\\'):
+        print(src)
         sf = src.split('\\')
-        print(sf)
         src_qumulo = sf[2]
         src_path = sf[3]
         print(src_qumulo + " : " + src_path)
+        df = dest.split('\\')
+        dest_qumulo = df[2]
+        dest_path = df[3]
+        print(dest_qumulo + " : " + dest_path)
         exit(1)
     else:
         (src_qumulo, src_path) = src.split(':')
