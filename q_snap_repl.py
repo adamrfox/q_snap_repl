@@ -179,16 +179,13 @@ if __name__ == "__main__":
         usage()
 # Validate logins on clusters
     if src.startswith('\\'):
-        print(src)
         sf = src.split('\\')
         src_qumulo = sf[2]
         src_path = sf[3]
-        print(src_qumulo + " : " + src_path)
         df = dest.split('\\')
         dest_qumulo = df[2]
         dest_path = df[3]
-        print(dest_qumulo + " : " + dest_path)
-        exit(1)
+        rel_cmd = "robocopy /E /ZB /DCOPY:T /COPYALL /R:1 /W:1"
     else:
         (src_qumulo, src_path) = src.split(':')
         (dest_qumulo, dest_path) = dest.split(':')
@@ -196,22 +193,33 @@ if __name__ == "__main__":
     dprint(str(src_auth))
     dest_auth = api_login(dest_qumulo, dest_user, dest_password, DEST_RING_SYSTEM)
     dprint(str(dest_auth))
+    if src.startswith('\\'):
+        share_data = qumulo_get(dest_qumulo, '/v2/smb/shares/' + dest_path, dest_auth)
+        if share_data == "404":
+            print("GOT 404 in share_data")
+            exit(2)
+        print(share_data['fs_path'])
+        dest_path = share_data['fs_path']
     get_dest_path = qumulo_get(dest_qumulo, '/v1/files/' + urllib.parse.quote(dest_path, safe='') + '/info/attributes',
                                dest_auth)
-    if get_dest_path == 404:
+    if get_dest_path == "404":
         print('GOT 404 in dir_info')
         exit(2)
     dprint(str(get_dest_path))
     dest_id = get_dest_path['id']
 # Get local paths on client
-    res = subprocess.run('df', stdout=subprocess.PIPE, text=True)
-    found = False
-    for l in res.stdout.splitlines():
-        lf = l.split()
-        if lf[0] == src:
-            local_src_path = lf[-1]
-        elif lf[0] == dest:
-            local_dest_path = lf[-1]
+    if src.startswith('\\'):
+        local_src_path = src
+        local_dest_path = dest
+    else:
+        res = subprocess.run('df', stdout=subprocess.PIPE, text=True)
+        found = False
+        for l in res.stdout.splitlines():
+            lf = l.split()
+            if lf[0] == src:
+                local_src_path = lf[-1]
+            elif lf[0] == dest:
+                local_dest_path = lf[-1]
     dprint("LOCAL_SRC_PATH: " + local_src_path)
     dprint("LOCAL_DEST_PATH: " + local_dest_path)
     if local_src_path == '' or local_dest_path == '':
