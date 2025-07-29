@@ -94,6 +94,8 @@ def qumulo_get(addr, api, auth):
     else:
         sys.stderr.write("API ERROR: " + str(res.status_code) + "\n")
         sys.stderr.write(str(res.content) + "\n")
+        if WINDOWS and drive:
+            subprocess.run(['net', 'use', '/d', drive])
         exit(3)
 
 def qumulo_post(addr, api, body, auth):
@@ -112,6 +114,8 @@ def qumulo_post(addr, api, body, auth):
         return (results)
     else:
         sys.stderr.write("API ERROR: " + str(res.status_code) + '\n')
+        if WINDOWS and drive:
+            subprocess.run(['net', 'use', '/d', drive])
         exit(3)
 def get_token_from_file(file):
     with open(file, 'r') as fp:
@@ -147,6 +151,7 @@ if __name__ == "__main__":
     snap_id_list = []
     WINDOWS = False
     rb_threads = 8
+    drive = ""
 
 
     optlist, args = getopt.getopt(sys.argv[1:],'hDc:f:s:d:r:i:t:', ['--help', '--DEBUG', '--creds=',
