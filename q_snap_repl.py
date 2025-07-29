@@ -145,10 +145,13 @@ if __name__ == "__main__":
     repl_cmd = 'rsync -av'
     SNAP_LIST = False
     snap_id_list = []
+    WINDOWS = False
+    rb_threads = 8
 
 
-    optlist, args = getopt.getopt(sys.argv[1:],'hDc:f:s:d:r:i:', ['--help', '--DEBUG', '--creds=', '--token=', '--token-file=',
-                                                               '--src-creds=', '--dest-creds=', '--repl_cmd=', '--ids='])
+    optlist, args = getopt.getopt(sys.argv[1:],'hDc:f:s:d:r:i:t:', ['--help', '--DEBUG', '--creds=',
+                                                               '--src-creds=', '--dest-creds=', '--repl_cmd=', '--ids=,'
+                                                                '--threads='])
     for opt, a in optlist:
         if opt in ['-h,', '--help']:
             usage()
@@ -172,6 +175,8 @@ if __name__ == "__main__":
         if opt in ('-i', '--id-list'):
             SNAP_LIST = True
             snap_id_list = a.split(',')
+        if opt in ('-t', '--threads'):
+            rb_threads = int(a)
 
     try:
         (src, dest) = args
@@ -179,13 +184,14 @@ if __name__ == "__main__":
         usage()
 # Validate logins on clusters
     if src.startswith('\\'):
+        WINDOWS = True
         sf = src.split('\\')
         src_qumulo = sf[2]
         src_path = sf[3]
         df = dest.split('\\')
         dest_qumulo = df[2]
         dest_path = df[3]
-        rel_cmd = "robocopy /E /ZB /DCOPY:T /COPYALL /R:1 /W:1"
+        repl_cmd = "robocopy /E /MT:" + str(rb_threads) + " /DCOPY:DAT /COPY:DATSO /R:1 /W:1"
     else:
         (src_qumulo, src_path) = src.split(':')
         (dest_qumulo, dest_path) = dest.split(':')
@@ -193,7 +199,7 @@ if __name__ == "__main__":
     dprint(str(src_auth))
     dest_auth = api_login(dest_qumulo, dest_user, dest_password, DEST_RING_SYSTEM)
     dprint(str(dest_auth))
-    if src.startswith('\\'):
+    if WINDOWS:
         share_data = qumulo_get(dest_qumulo, '/v2/smb/shares/' + dest_path, dest_auth)
         if share_data == "404":
             print("GOT 404 in share_data")
@@ -208,9 +214,11 @@ if __name__ == "__main__":
     dprint(str(get_dest_path))
     dest_id = get_dest_path['id']
 # Get local paths on client
-    if src.startswith('\\'):
-        local_src_path = src
-        local_dest_path = dest
+    if WINDOWS:
+        lf = src.split('\\')
+        local_src_path = lf[-1]
+        lf = dest.split('\\')
+        local_dest_path = lf[-1]
     else:
         res = subprocess.run('df', stdout=subprocess.PIPE, text=True)
         found = False
@@ -226,19 +234,33 @@ if __name__ == "__main__":
         sys.stderr.write('Local paths not found.\n')
         usage()
 # Get Qumulo filesystem path from export path
-    exp = qumulo_get(src_qumulo, '/v2/nfs/exports/', src_auth)
-    for e in exp:
-        if e['export_path'] == src_path:
-            src_path = e['fs_path']
-            if not src_path.endswith('/'):
-                src_path = src_path + '/'
-            break
+    if WINDOWS:
+        exp = qumulo_get(src_qumulo, '/v2/smb/shares/' + local_src_path, src_auth)
+        if exp == "404":
+            print("src share got 404")
+            exit(2)
+        src_path = exp['fs_path']
+    else:
+        exp = qumulo_get(src_qumulo, '/v2/nfs/exports/', src_auth)
+        for e in exp:
+            if e['export_path'] == src_path:
+                src_path = e['fs_path']
+                break
+    if not src_path.endswith('/'):
+        src_path = src_path + '/'
     dprint("Q_SRC_PATH: " + src_path)
-    exp = qumulo_get(dest_qumulo, '/v2/nfs/exports/', dest_auth)
-    for e in exp:
-        if e['export_path'] == dest_path:
-            dest_path = e['fs_path']
-            break
+    if WINDOWS:
+        exp = qumulo_get(dest_qumulo, '/v2/smb/shares/' + local_dest_path, dest_auth)
+        if exp == "404":
+            print("dest share got 404")
+            exit(2)
+        dest_path = exp['fs_path']
+    else:
+        exp = qumulo_get(dest_qumulo, '/v2/nfs/exports/', dest_auth)
+        for e in exp:
+            if e['export_path'] == dest_path:
+                dest_path = e['fs_path']
+                break
     dprint("Q_DEST_PATH: " + dest_path)
 # Get snapshots for source path
     src_ss = qumulo_get(src_qumulo, '/v4/snapshots/status/', src_auth)
@@ -253,17 +275,60 @@ if __name__ == "__main__":
                     {'id': se['id'], 'name': se['name'], 'timestamp': se['timestamp'], 'expiration': se['expiration']})
 
     dprint("SNAP_LIST: "+ str(snaps))
+    if WINDOWS:
+        wm = subprocess.run(['net', 'use', '*', src ], capture_output=True, text=True)
+        dprint("WIN_MOUNT: " + str(wm))
+        if not wm.stdout:
+            sys.stderr.write('WIN_MOUNT failed: ' + wm.stderr)
+            exit(3)
+        wmf = wm.stdout.split()
+        drive = wmf[1]
+        dprint("DRIVE: " + drive)
 # Loop on snapshots
     repl_cmd_l = repl_cmd.split()
-    repl_cmd_l.append('.')
-    repl_cmd_l.append(local_dest_path)
-    dprint("REPL_CMD: " + str(repl_cmd_l))
+    if not WINDOWS:
+        repl_cmd_l.append('.')
+        repl_cmd_l.append(local_dest_path)
+        dprint("REPL_CMD: " + str(repl_cmd_l))
     for snap in snaps:
         print("Replicating " + snap['name'])
-        subprocess.run(repl_cmd_l, cwd=local_src_path + '/.snapshot/' + snap['name'], capture_output=True)
+        if WINDOWS:
+            repl_cmd_win = repl_cmd_l.copy()
+            repl_cmd_win.append(drive + '\\.snapshot\\' + snap['name'])
+            repl_cmd_win.append(dest)
+            dprint("REP_CMD: " + str(repl_cmd_win))
+            win_repl = subprocess.run(repl_cmd_win, capture_output=True, text=True)
+            print("REPL_OUT:")
+            print(win_repl.stdout)
+        else:
+            subprocess.run(repl_cmd_l, cwd=local_src_path + '/.snapshot/' + snap['name'], capture_output=True)
         snap_f = snap['name'].split('_')
         snap_f.pop(0)
         snap_strip = '_'.join(snap_f)
         body = json.dumps({'name_suffix': snap_strip, 'expiration': snap['expiration'], 'source_file_id': dest_id})
         print("Creating snapshot on target")
         qumulo_post(dest_qumulo, '/v3/snapshots/', body, dest_auth)
+# Final Replication (active filesystem)
+    print("Final Replication")
+    repl_cmd_l = []
+    repl_cmd_l = repl_cmd.split()
+    if not WINDOWS:
+        repl_cmd_l.append('--exclude')
+        repl_cmd_l.append("'.snapshot'")
+        repl_cmd_l.append('.')
+        repl_cmd_l.append(local_dest_path)
+        dprint("FINAL REPL_CMD: " + str(repl_cmd_l))
+        subprocess.run(repl_cmd_l, cwd=local_src_path, capture_output=True)
+    else:
+        repl_cmd_win = repl_cmd_l.copy()
+        repl_cmd_win.append(drive)
+        repl_cmd_win.append(dest)
+        repl_cmd_win.append('/XD')
+        repl_cmd_win.append('.snapshot')
+        dprint("FINAL_REPL_CMD: " + str(repl_cmd_win))
+        win_repl = subprocess.run(repl_cmd_win, capture_output=True, text=True)
+        print("DRIVE: "+ drive)
+        subprocess.run(['net', 'use', '/d', drive])
+
+
+
