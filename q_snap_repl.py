@@ -8,8 +8,9 @@ import time
 import os
 import keyring
 import keyring.backend
-# from keyrings.alt.file import PlaintextKeyring
-# keyring.set_keyring(PlaintextKeyring())
+if os.name == "posix":
+    from keyrings.alt.file import PlaintextKeyring
+    keyring.set_keyring(PlaintextKeyring())
 import subprocess
 from datetime import datetime, timezone
 from dateutil import tz
