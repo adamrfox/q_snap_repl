@@ -146,15 +146,16 @@ if __name__ == "__main__":
     ofp = ""
     lf = []
     snaps = []
-    repl_cmd = 'rsync -av'
+    repl_cmd = 'rsync -av --delete'
     SNAP_LIST = False
+    LOGGING = False
     snap_id_list = []
     WINDOWS = False
     rb_threads = 8
     drive = ""
 
 
-    optlist, args = getopt.getopt(sys.argv[1:],'hDc:f:s:d:r:i:t:', ['--help', '--DEBUG', '--creds=',
+    optlist, args = getopt.getopt(sys.argv[1:],'hDlc:f:s:d:r:i:t:', ['--help', '--DEBUG', '--creds=', '--logging'
                                                                '--src-creds=', '--dest-creds=', '--repl_cmd=', '--ids=,'
                                                                 '--threads='])
     for opt, a in optlist:
@@ -182,6 +183,8 @@ if __name__ == "__main__":
             snap_id_list = a.split(',')
         if opt in ('-t', '--threads'):
             rb_threads = int(a)
+        if opt in ('-l', '--logging'):
+            LOGGING = True
 
     try:
         (src, dest) = args
@@ -306,7 +309,13 @@ if __name__ == "__main__":
             print("REPL_OUT:")
             print(win_repl.stdout)
         else:
-            subprocess.run(repl_cmd_l, cwd=local_src_path + '/.snapshot/' + snap['name'], capture_output=True)
+            if LOGGING:
+                with open('repl_log_' + str(snap['id']) + '.txt', 'w') as file:
+                    subprocess.run(repl_cmd_l, cwd=local_src_path + '/.snapshot/' + snap['name'], stdout=file,
+                                   stderr=subprocess.STDOUT)
+                file.close()
+            else:
+                subprocess.run(repl_cmd_l, cwd=local_src_path + '/.snapshot/' + snap['name'])
         snap_f = snap['name'].split('_')
         snap_f.pop(0)
         snap_strip = '_'.join(snap_f)
@@ -323,7 +332,11 @@ if __name__ == "__main__":
         repl_cmd_l.append('.')
         repl_cmd_l.append(local_dest_path)
         dprint("FINAL REPL_CMD: " + str(repl_cmd_l))
-        subprocess.run(repl_cmd_l, cwd=local_src_path, capture_output=True)
+        if LOGGING:
+            with open ('repl_log_final.txt', 'w') as file:
+                subprocess.run(repl_cmd_l, cwd=local_src_path, stdout=file, stderr=subprocess.STDOUT)
+                file.close()
+        subprocess.run(repl_cmd_l, cwd=local_src_path)
     else:
         repl_cmd_win = repl_cmd_l.copy()
         repl_cmd_win.append(drive)
