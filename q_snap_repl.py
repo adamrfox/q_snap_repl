@@ -306,9 +306,12 @@ if __name__ == "__main__":
             repl_cmd_win.append(drive + '\\.snapshot\\' + snap['name'])
             repl_cmd_win.append(dest)
             dprint("REP_CMD: " + str(repl_cmd_win))
-            win_repl = subprocess.run(repl_cmd_win, capture_output=True, text=True)
-            print("REPL_OUT:")
-            print(win_repl.stdout)
+            if LOGGING:
+                with open('repl_log_' + str(snap['id']) + '.txt', 'w') as file:
+                    win_repl = subprocess.run(repl_cmd_win, stdout=file, stderr=subprocess.STDOUT)
+                file.close()
+            else:
+                win_repl = subprocess.run(repl_cmd_win, capture_output=True, text=True)
         else:
             if LOGGING:
                 with open('repl_log_' + str(snap['id']) + '.txt', 'w') as file:
