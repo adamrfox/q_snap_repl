@@ -349,8 +349,4 @@ if __name__ == "__main__":
         repl_cmd_win.append('.snapshot')
         dprint("FINAL_REPL_CMD: " + str(repl_cmd_win))
         win_repl = subprocess.run(repl_cmd_win, capture_output=True, text=True)
-        print("DRIVE: "+ drive)
         subprocess.run(['net', 'use', '/d', drive])
-
-
-
