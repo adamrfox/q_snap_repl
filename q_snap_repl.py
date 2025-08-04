@@ -5,15 +5,13 @@ import getpass
 import requests
 import json
 import time
-import os
+import platform
 import keyring
 import keyring.backend
-if os.name == "posix":
+if platform.system == "Linux":
     from keyrings.alt.file import PlaintextKeyring
     keyring.set_keyring(PlaintextKeyring())
 import subprocess
-from datetime import datetime, timezone
-from dateutil import tz
 import urllib
 import urllib3
 urllib3.disable_warnings()
@@ -21,7 +19,18 @@ import pprint
 pp = pprint.PrettyPrinter(indent=4)
 
 def usage():
-    print("Usage goes here!")
+    sys.stderr.write("Usage: q_snap_repl.py [-hDl] [-c creds] [-s src_creds] [-d dest_creds] [-r repl_cmd] [-i id_list] [-t threads] src dest\n")
+    sys.stderr.write("-h | --help : Prints this message\n")
+    sys.stderr.write("-D | --DEBUG: Debug mode, Creates extra output in a file called debug.out\n")
+    sys.stderr.write("-l | --logging : Enables replication logging\n")
+    sys.stderr.write("-c | --creds : Supply credentials if they are the same on both clusters [user[:password]]\n")
+    sys.stderr.write("-s | --src_creds : Supply credentials of the source if different [user[:password]]\n")
+    sys.stderr.write("-d | --dest_creds : Supply credentials of the destination if different [user[:password]]\n")
+    sys.stderr.write("-r | --repl_cmd : Use a custom replication command\n")
+    sys.stderr.write("-i | --id_list : Only replicate a comma separated list of snapshot IDs\n")
+    sys.stderr.write("-t | --threads : Change the number of threads (default robocopy command only).  [Def: 8]\n")
+    sys.stderr.write("src : Source Cluster Name and Path [name:path or UNC path to share]\n")
+    sys.stderr.write("dest: Destingation Cluster Name and Path [name:path or UNC path to share]\n")
     exit(0)
 
 def dprint(message):
@@ -152,6 +161,7 @@ if __name__ == "__main__":
     LOGGING = False
     snap_id_list = []
     WINDOWS = False
+    CUSTOM_CMD = False
     rb_threads = 8
     drive = ""
 
@@ -200,7 +210,8 @@ if __name__ == "__main__":
         df = dest.split('\\')
         dest_qumulo = df[2]
         dest_path = df[3]
-        repl_cmd = "robocopy /E /MT:" + str(rb_threads) + " /DCOPY:DAT /COPY:DATSO /R:1 /W:1"
+        if not CUSTOM_CMD:
+            repl_cmd = "robocopy /E /MT:" + str(rb_threads) + " /DCOPY:DAT /COPY:DATSO /R:1 /W:1"
     else:
         (src_qumulo, src_path) = src.split(':')
         (dest_qumulo, dest_path) = dest.split(':')
