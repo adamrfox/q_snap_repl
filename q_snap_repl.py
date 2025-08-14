@@ -351,7 +351,8 @@ if __name__ == "__main__":
             with open ('repl_log_final.txt', 'w') as file:
                 subprocess.run(repl_cmd_l, cwd=local_src_path, stdout=file, stderr=subprocess.STDOUT)
                 file.close()
-        subprocess.run(repl_cmd_l, cwd=local_src_path)
+        else:
+            subprocess.run(repl_cmd_l, cwd=local_src_path)
     else:
         repl_cmd_win = repl_cmd_l.copy()
         repl_cmd_win.append(drive)
